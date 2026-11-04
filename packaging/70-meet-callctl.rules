@@ -1,0 +1,13 @@
+# meet-callctl: virtual HID call-control device for Google Meet.
+# Installed to /etc/udev/rules.d/. Must sort before 73-seat-late.rules, which
+# turns TAG "uaccess" into an ACL for the user of the active local session.
+# No group or MODE changes: nodes stay root:root 0600 plus that one user ACL.
+
+# /dev/uhid: lets the active local user create virtual HID devices (needed by
+# the daemon). Same pattern Ubuntu uses for /dev/uinput (60-steam-input.rules).
+KERNEL=="uhid", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uhid"
+
+# hidraw node of the meet-callctl device only (created through uhid, with the
+# pid.codes test ID 1209:0001, bus virtual or usb): lets the active local
+# user's browser open it through WebHID.
+SUBSYSTEM=="hidraw", DEVPATH=="/devices/virtual/misc/uhid/000[36]:1209:0001.*", TAG+="uaccess"

@@ -1,0 +1,33 @@
+[Unit]
+Description=Virtual HID call-control device for Google Meet
+Documentation=file://%h/.local/share/doc/meet-callctl/README.md
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/meet-callctl daemon
+Restart=on-failure
+RestartSec=3
+# Hardening: the daemon only needs /dev/uhid and its runtime socket.
+NoNewPrivileges=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ProtectHome=read-only
+LockPersonality=yes
+RuntimeDirectory=meet-callctl
+RuntimeDirectoryMode=0700
+MemoryDenyWriteExecute=yes
+UMask=0077
+PrivateTmp=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=graphical-session.target

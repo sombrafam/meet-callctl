@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Launcher: runs meet_callctl from the directory next to this script's bin/."""
+import os
+import sys
+
+here = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.dirname(here))
+
+from meet_callctl.cli import main  # noqa: E402
+
+sys.exit(main())

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebHID Call Control Test</title>
+<style>
+  :root { --bg: #fff; --fg: #1b1b1b; --muted: #666; --line: #ddd; --accent: #1a73e8; --bad: #c5221f; --good: #188038; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161616; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333; --accent: #8ab4f8; --bad: #f28b82; --good: #81c995; }
+  }
+  body { background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; margin: 0 auto; max-width: 760px; padding: 16px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.note { color: var(--muted); margin-top: 0; }
+  button { font: inherit; padding: 6px 12px; margin: 4px 6px 4px 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  #state { font-size: 1.1rem; margin: 12px 0; }
+  #state b.muted { color: var(--bad); } #state b.live { color: var(--good); }
+  pre { background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 8px; height: 260px; overflow: auto; font-size: 12.5px; white-space: pre-wrap; }
+  label { display: block; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>WebHID call-control test</h1>
+<p class="note">Checks that Chrome can open the meet-callctl device, without a meeting.
+This page acts like Meet: it lights the device's Off-Hook LED (in call) and answers
+mute requests with the Mute LED. Close this tab before testing in Meet; only one page
+should drive the device.</p>
+
+<button class="primary" id="connect">Connect device</button>
+<button id="startCall">Start fake call</button>
+<button id="endCall">End fake call</button>
+<button id="uiToggle">Toggle mute (as if clicked in Meet)</button>
+<label><input type="checkbox" id="anyTelephony"> Show every Telephony-page device in the chooser</label>
+<div id="state">Not connected</div>
+<pre id="log"></pre>
+
+<script>
+"use strict";
+const TELEPHONY = 0x0B, LED = 0x08;
+const U = { phoneMute: 0x2F, hook: 0x20, ledMute: 0x09, ledOffHook: 0x17, ledRing: 0x18 };
+let dev = null, layout = null, inCall = false, muted = true;
+
+const $ = (id) => document.getElementById(id);
+function log(msg) { const l = $("log"); l.textContent += new Date().toLocaleTimeString() + "  " + msg + "\n"; l.scrollTop = l.scrollHeight; }
+function hex(view) { return [...new Uint8Array(view.buffer, view.byteOffset, view.byteLength)].map(b => b.toString(16).padStart(2, "0")).join(" "); }
+
+// Work out bit positions from the descriptor Chrome parsed.
+function findLayout(device) {
+  const out = { input: null, output: null };
+  for (const col of device.collections) {
+    for (const r of col.inputReports || []) scan(r, "input");
+    for (const r of col.outputReports || []) scan(r, "output");
+  }
+  function scan(report, kind) {
+    let bit = 0;
+    for (const item of report.items) {
+      const usages = item.usages || [];
+      for (let i = 0; i < item.reportCount; i++) {
+        const u = usages[Math.min(i, usages.length - 1)];
+        if (u !== undefined && !item.isConstant) {
+          const page = u >>> 16, id = u & 0xffff;
+          out[kind] = out[kind] || { reportId: report.reportId, bits: {}, abs: {} };
+          out[kind].bits[page + ":" + id] = bit;
+          out[kind].abs[page + ":" + id] = item.isAbsolute;
+        }
+        bit += item.reportSize;
+      }
+    }
+  }
+  return out;
+}
+
+function render() {
+  const s = $("state");
+  if (!dev) { s.textContent = "Not connected"; return; }
+  // productName comes from the device: insert as text, never as HTML.
+  s.textContent = `${dev.productName}: ${inCall ? "in fake call" : "no call"}, mic `;
+  const b = document.createElement("b");
+  b.className = muted ? "muted" : "live";
+  b.textContent = muted ? "muted" : "live";
+  s.appendChild(b);
+}
+
+async function sendLeds() {
+  if (!dev || !layout.output) return;
+  const o = layout.output, data = new Uint8Array(1);
+  const set = (id, on) => { const b = o.bits[LED + ":" + id]; if (b !== undefined && on) data[b >> 3] |= 1 << (b & 7); };
+  set(U.ledOffHook, inCall); set(U.ledMute, inCall && muted);
+  await dev.sendReport(o.reportId, data);
+  log(`sent LED report id ${o.reportId}: ${hex(new DataView(data.buffer))} (offHook=${inCall} mute=${inCall && muted})`);
+  render();
+}
+
+function onInput(e) {
+  log(`input report id ${e.reportId}: ${hex(e.data)}`);
+  const i = layout.input; if (!i || e.reportId !== i.reportId) return;
+  const key = TELEPHONY + ":" + U.phoneMute, b = i.bits[key];
+  if (b === undefined) return;
+  const v = (e.data.getUint8(b >> 3) >> (b & 7)) & 1;
+  if (!inCall) { log("  ignored: no fake call active"); return; }
+  if (i.abs[key]) { muted = !!v; log(`  absolute Phone Mute = ${v} -> mic ${muted ? "muted" : "live"}`); }
+  else if (v) { muted = !muted; log(`  relative Phone Mute pulse -> mic ${muted ? "muted" : "live"}`); }
+  else return;
+  sendLeds();
+}
+
+async function use(device) {
+  if (!device.opened) await device.open();
+  dev = device; layout = findLayout(device);
+  dev.addEventListener("inputreport", onInput);
+  log(`opened "${device.productName}" ${device.vendorId.toString(16)}:${device.productId.toString(16)}; ` +
+      `collections: ${device.collections.map(c => "page 0x" + c.usagePage.toString(16) + " usage 0x" + c.usage.toString(16)).join(", ")}`);
+  log(`layout: ${JSON.stringify(layout)}`);
+  render();
+}
+
+$("connect").onclick = async () => {
+  if (!("hid" in navigator)) { log("WebHID not available (use Chrome/Chromium on http://localhost)"); return; }
+  const filters = $("anyTelephony").checked ? [{ usagePage: TELEPHONY }] : [{ vendorId: 0x1209, productId: 0x0001 }];
+  try {
+    const [d] = await navigator.hid.requestDevice({ filters });
+    if (d) await use(d); else log("no device chosen");
+  } catch (err) { log("error: " + err); }
+};
+$("startCall").onclick = () => { inCall = true; muted = false; sendLeds(); };
+$("endCall").onclick = () => { inCall = false; sendLeds(); };
+$("uiToggle").onclick = () => { if (inCall) { muted = !muted; sendLeds(); } };
+
+navigator.hid?.getDevices().then(ds => {
+  const d = ds.find(x => x.vendorId === 0x1209 && x.productId === 0x0001);
+  if (d) use(d).catch(e => log("error: " + e));
+});
+navigator.hid?.addEventListener("disconnect", (e) => { if (e.device === dev) { dev = null; log("device disconnected"); render(); } });
+</script>
+</body>
+</html>

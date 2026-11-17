@@ -65,7 +65,10 @@ class Daemon:
         self.ctl = CallControl(self.profile)
         self.socket_path = socket_path
         self.create_args = dict(
-            name=name, phys=f"{PHYS_PREFIX}/{profile}", uniq="",
+            # Non-empty, stable uniq => HID serial number. Chromium only
+            # persists WebHID permissions for devices with a serial number.
+            name=name, phys=f"{PHYS_PREFIX}/{profile}",
+            uniq=f"{PHYS_PREFIX}-{profile}",
             descriptor=self.profile.descriptor, bus=bus, vendor=vendor,
             product=product, version=0x0100)
         self.uhid_path = uhid_path

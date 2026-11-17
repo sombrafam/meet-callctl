@@ -12,7 +12,10 @@ Tested with Google Meet in Chrome on Ubuntu 24.04 (KDE Plasma 5.27, X11).
 ## Requirements
 
 - Linux with systemd and udev; Python 3.10+ (no extra packages)
-- Chrome, Chromium or another Chromium-based browser (Firefox lacks WebHID)
+- Chrome, Chromium or another Chromium-based browser (Firefox lacks WebHID).
+  Ubuntu's Chromium snap is supported: the udev rule tags the device for the
+  snap's device cgroup. Install the snap before `sudo ./install.sh system`, or
+  re-run it afterwards. Flatpak browsers are not supported
 
 ## Install
 
@@ -85,7 +88,7 @@ Logs: `journalctl --user -u meet-callctl -f`
 | --- | --- |
 | `daemon is not running` | `systemctl --user restart meet-callctl`, then check the logs |
 | `permission denied opening /dev/uhid` | Run `sudo ./install.sh system`. `getfacl /dev/uhid` must list your user. Use the local desktop session, not SSH |
-| Device not in Chrome's list | Restart Chrome after installing. Snap/Flatpak browsers need extra HID permissions |
+| Device not in Chrome's list | Restart Chrome after installing. Chromium snap: re-run `sudo ./install.sh system`, restart the daemon, and check that `udevadm info /dev/hidrawN` lists `snap_chromium_chromium` in `TAGS` |
 | `No browser has the device open` | Keep the Meet tab open; check the device is still under *Connected devices* |
 | `Meet has not reported its mute state yet` | Join the meeting first |
 | `Meet did not confirm` (exit 3) | Disconnect other call-control devices in Meet; try the `headset` profile (below) |

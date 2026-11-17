@@ -11,3 +11,10 @@ KERNEL=="uhid", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uhid"
 # pid.codes test ID 1209:0001, bus virtual or usb): lets the active local
 # user's browser open it through WebHID.
 SUBSYSTEM=="hidraw", DEVPATH=="/devices/virtual/misc/uhid/000[36]:1209:0001.*", TAG+="uaccess"
+
+# Snap Chromium (strict confinement): the snap's device cgroup only admits
+# nodes tagged for it. snapd's 70-snap.chromium.rules (sorts after this file)
+# runs snap-device-helper for this tag, adding the node to the cgroup.
+# AppArmor already allows /dev/hidraw* through the auto-connected u2f-devices
+# interface. Harmless if the snap is not installed.
+SUBSYSTEM=="hidraw", DEVPATH=="/devices/virtual/misc/uhid/000[36]:1209:0001.*", TAG+="snap_chromium_chromium"
